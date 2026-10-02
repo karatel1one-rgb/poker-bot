@@ -1,0 +1,44 @@
+{
+    "Bars": {
+        "points": 85,
+        "money": 12500,
+        "wins": 7,
+        "games": 12
+    },
+    "Vadya": {
+        "points": 0,
+        "money": 0,
+        "wins": 0,
+        "games": 0
+    },
+    "Kostya": {
+        "points": 0,
+        "money": 0,
+        "wins": 0,
+        "games": 0
+    },
+    "Tokar": {
+        "points": 0,
+        "money": 0,
+        "wins": 0,
+        "games": 0
+    },
+    "Vova": {
+        "points": 0,
+        "money": 0,
+        "wins": 0,
+        "games": 0
+    },
+    "Danya": {
+        "points": 0,
+        "money": 0,
+        "wins": 0,
+        "games": 0
+    },
+    "Chubasya": {
+        "points": 0,
+        "money": 0,
+        "wins": 0,
+        "games": 0
+    }
+}
