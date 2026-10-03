@@ -7,10 +7,11 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     Update,
 )
 from telegram.constants import ParseMode
-from telegram.error import BadRequest
+from telegram.error import BadRequest, Forbidden
 from telegram.ext import (
     Application,
     ApplicationHandlerStop,
@@ -61,10 +62,10 @@ REPLY_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["⏱ Осталось времени", "🃏 Блайнды"],
         ["🔁 Ребай", "🚪 Выбыл"],
+        ["🏁 Закончить игру"],
         ["/game", "/leaderboard"],
     ],
     resize_keyboard=True,
-    selective=True,
 )
 
 
@@ -151,11 +152,14 @@ def get_operator(chat_id):
 
 def set_operator(chat, user):
     data = load_operators()
-    data[str(chat.id)] = {
+    record = {
         "user_id": user.id,
         "name": user.full_name,
         "username": user.username or "",
     }
+    data[str(user.id)] = record
+    if chat.id != user.id:
+        data[str(chat.id)] = record
     save_operators(data)
 
 
@@ -179,7 +183,7 @@ async def access_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if is_start_command(update):
         return
-    if is_operator(chat.id, user.id):
+    if is_operator(chat.id, user.id) or is_operator(user.id, user.id):
         return
 
     if update.callback_query:
@@ -195,7 +199,83 @@ async def access_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 🧮 ХЕЛПЕРЫ
 # ============================================================
 
+async def send_user(context, user_id, text, reply_markup=None, parse_mode=None):
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+        )
+        return True
+    except Forbidden:
+        return False
+    except BadRequest:
+        return False
+
+
+async def hide_group_ui(update: Update):
+    chat = update.effective_chat
+    message = update.effective_message
+    if not chat or not message or chat.type == "private":
+        return
+
+    try:
+        hidden = await message.reply_text(
+            "\u2060",
+            reply_markup=ReplyKeyboardRemove(selective=True),
+            do_quote=True,
+        )
+        await hidden.delete()
+    except Exception:
+        pass
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+async def reply_pm(update: Update, context: ContextTypes.DEFAULT_TYPE, text, reply_markup=None, parse_mode=None):
+    user = update.effective_user
+    sent = await send_user(context, user.id, text, reply_markup, parse_mode)
+    await hide_group_ui(update)
+    if sent:
+        return True
+
+    if update.effective_chat and update.effective_chat.type != "private":
+        await update.effective_message.reply_text(
+            f"{user.mention_html()}, открой личку с ботом и нажми /start.\n"
+            "Тогда ответы будут только у тебя, не в группе.",
+            parse_mode=ParseMode.HTML,
+            do_quote=True,
+        )
+    return False
+
+
 async def safe_edit(query, text, reply_markup=None):
+    chat = query.message.chat if query.message else None
+    bot = query.get_bot()
+    user_id = query.from_user.id if query.from_user else None
+
+    if chat and chat.type != "private" and user_id:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text=text,
+                reply_markup=reply_markup,
+            )
+        except (Forbidden, BadRequest):
+            await query.answer(
+                "Открой личку с ботом и нажми /start.",
+                show_alert=True,
+            )
+        return
+
     try:
         await query.edit_message_text(text=text, reply_markup=reply_markup)
     except BadRequest as error:
@@ -203,8 +283,15 @@ async def safe_edit(query, text, reply_markup=None):
         if "not modified" in message:
             return
         if "message to edit not found" in message or "there is no text" in message:
-            if query.message:
-                await query.message.reply_text(text, reply_markup=reply_markup)
+            if user_id:
+                try:
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text=text,
+                        reply_markup=reply_markup,
+                    )
+                except (Forbidden, BadRequest):
+                    return
             return
         raise
 
@@ -357,7 +444,7 @@ def game_keyboard(game):
             ]
         )
         rows.append(
-            [InlineKeyboardButton("🏁 Банк и завершение", callback_data="t:finish")]
+            [InlineKeyboardButton("🏁 Закончить игру", callback_data="t:finish")]
         )
 
     if status == "awaiting_bank":
@@ -543,7 +630,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     set_operator(chat, user)
 
-    await update.message.reply_text(
+    await reply_pm(update, context,
         f"♠️ {user.mention_html()}, бот включён только для тебя.\n\n"
         "Клавиатура и команды работают лишь у того, кто нажал /start.\n"
         "Новая игра: /newgame",
@@ -554,7 +641,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    await reply_pm(update, context,
         "♠️ КОМАНДЫ POKER BOT\n\n"
         "/start — включить бота только для себя\n"
         "/leaderboard — текущий рейтинг\n"
@@ -583,7 +670,7 @@ async def players_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "♠️ СПИСОК ИГРОКОВ\n\n"
     for i, name in enumerate(players.keys(), 1):
         text += f"{i}. {name}\n"
-    await update.message.reply_text(text)
+    await reply_pm(update, context,text)
 
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -601,17 +688,17 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎮 {data['games']} игр\n\n"
         )
 
-    await update.message.reply_text(text)
+    await reply_pm(update, context,text)
 
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Используй:\n/stats Bars")
+        await reply_pm(update, context,"Используй:\n/stats Bars")
         return
 
     name = context.args[0]
     if name not in players:
-        await update.message.reply_text("❌ Игрок не найден.")
+        await reply_pm(update, context,"❌ Игрок не найден.")
         return
 
     data = players[name]
@@ -620,7 +707,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         i for i, (player_name, _) in enumerate(ranking, 1) if player_name == name
     )
 
-    await update.message.reply_text(
+    await reply_pm(update, context,
         f"♠️ СТАТИСТИКА {name.upper()}\n\n"
         f"🏅 Место: {place}\n"
         f"⭐ Очки: {data['points']}\n"
@@ -638,7 +725,7 @@ async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, (name, data) in enumerate(ranking):
         text += f"{medals[i]} {name} — {data['points']} очков\n"
 
-    await update.message.reply_text(text)
+    await reply_pm(update, context,text)
 
 
 async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -647,7 +734,7 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i, (sb, bb) in enumerate(BLIND_LEVELS, 1)
     )
 
-    await update.message.reply_text(
+    await reply_pm(update, context,
         "♠️ ПРАВИЛА\n\n"
         "Очки:\n"
         "🥇 1 место — 10 очков\n"
@@ -666,7 +753,7 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def edit_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) != 5:
-        await update.message.reply_text(
+        await reply_pm(update, context,
             "❌ Неверный формат.\n\n"
             "Используй:\n"
             "/edit Bars 85 12500 7 12\n\n"
@@ -681,7 +768,7 @@ async def edit_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     name = context.args[0]
     if name not in players:
-        await update.message.reply_text(f"❌ Игрок {name} не найден.")
+        await reply_pm(update, context,f"❌ Игрок {name} не найден.")
         return
 
     try:
@@ -690,7 +777,7 @@ async def edit_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wins = int(context.args[3])
         games_count = int(context.args[4])
     except ValueError:
-        await update.message.reply_text(
+        await reply_pm(update, context,
             "❌ Очки, деньги, победы и игры должны быть числами."
         )
         return
@@ -701,7 +788,7 @@ async def edit_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players[name]["games"] = games_count
     save_players(players)
 
-    await update.message.reply_text(
+    await reply_pm(update, context,
         f"✅ Данные игрока {name} обновлены!\n\n"
         f"⭐ Очки: {points}\n"
         f"💰 Выиграно: {money_text(money)}\n"
@@ -713,7 +800,7 @@ async def edit_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     records = load_history()
     if not records:
-        await update.message.reply_text("📜 История игр пока пустая.")
+        await reply_pm(update, context,"📜 История игр пока пустая.")
         return
 
     text = "📜 ИСТОРИЯ ИГР\n\n"
@@ -728,18 +815,18 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 Банк: {money_text(record.get('prize_pool', 0))}\n\n"
         )
 
-    await update.message.reply_text(text)
+    await reply_pm(update, context,text)
 
 
 async def game_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game = load_game()
     if not game:
-        await update.message.reply_text(
+        await reply_pm(update, context,
             "Сейчас нет активной игры.\nНачни новую: /newgame"
         )
         return
 
-    await update.message.reply_text(
+    await reply_pm(update, context,
         game_panel_text(game),
         reply_markup=game_keyboard(game),
     )
@@ -748,10 +835,10 @@ async def game_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game = load_game()
     if not game or game.get("status") not in ("running", "paused"):
-        await update.message.reply_text("Сейчас нет активного таймера.")
+        await reply_pm(update, context,"Сейчас нет активного таймера.")
         return
 
-    await update.message.reply_text(
+    await reply_pm(update, context,
         time_text(game),
         reply_markup=game_keyboard(game),
     )
@@ -760,10 +847,10 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def blinds_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game = load_game()
     if not game or game.get("status") not in ("running", "paused"):
-        await update.message.reply_text("Сейчас нет активной игры.")
+        await reply_pm(update, context,"Сейчас нет активной игры.")
         return
 
-    await update.message.reply_text(
+    await reply_pm(update, context,
         blinds_text(game),
         reply_markup=game_keyboard(game),
     )
@@ -776,7 +863,7 @@ async def blinds_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game = load_game()
     if game and game.get("status") in ("running", "paused", "awaiting_bank"):
-        await update.message.reply_text(
+        await reply_pm(update, context,
             "Уже есть активная игра. Заверши или отмени её: /cancelgame"
         )
         return
@@ -797,7 +884,7 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     save_game(game)
 
-    await update.message.reply_text(
+    await reply_pm(update, context,
         "♠️ НОВАЯ ИГРА\nОтметь, кто играет:",
         reply_markup=setup_keyboard(game),
     )
@@ -806,12 +893,12 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancelgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game = load_game()
     if not game:
-        await update.message.reply_text("Активной игры нет.")
+        await reply_pm(update, context,"Активной игры нет.")
         return
 
     cancel_blind_jobs(context.job_queue)
     clear_game()
-    await update.message.reply_text("❌ Игра отменена. Статистика не начислена.")
+    await reply_pm(update, context,"❌ Игра отменена. Статистика не начислена.")
 
 
 async def pause_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -824,7 +911,7 @@ async def resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def rebuy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Используй:\n/rebuy Bars")
+        await reply_pm(update, context,"Используй:\n/rebuy Bars")
         return
 
     await apply_rebuy(context.args[0], update.message)
@@ -832,7 +919,7 @@ async def rebuy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def out_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Используй:\n/out Bars")
+        await reply_pm(update, context,"Используй:\n/out Bars")
         return
 
     await apply_out(context.args[0], context, update.message)
@@ -1294,13 +1381,13 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if raw == "🔁 Ребай" and game.get("status") in ("running", "paused"):
-        await update.message.reply_text(
+        await reply_pm(update, context,
             "🔁 Кому ребай?",
             reply_markup=player_action_keyboard(game, "rebuy"),
         )
         return
     if raw == "🚪 Выбыл" and game.get("status") in ("running", "paused"):
-        await update.message.reply_text(
+        await reply_pm(update, context,
             "🚪 Кто выбыл?",
             reply_markup=player_action_keyboard(game, "out"),
         )
@@ -1311,14 +1398,14 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if awaiting == "buyin" and game.get("status") == "waiting_buyin":
         if not text.isdigit():
-            await update.message.reply_text("Нужно число. Пример: 500")
+            await reply_pm(update, context,"Нужно число. Пример: 500")
             return
         game["buy_in"] = int(text)
         game["status"] = "waiting_interval"
         game["awaiting"] = None
         save_game(game)
         start_bank = game["buy_in"] * len(game["selected"])
-        await update.message.reply_text(
+        await reply_pm(update, context,
             f"💵 Бай-ин: {money_text(game['buy_in'])}\n"
             f"Стартовый банк: {money_text(start_bank)}\n\n"
             "Выбери интервал повышения блайндов:",
@@ -1328,7 +1415,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if awaiting == "bank" and game.get("status") == "awaiting_bank":
         if not text.isdigit():
-            await update.message.reply_text("Впиши общий банк числом. Пример: 7000")
+            await reply_pm(update, context,"Впиши общий банк числом. Пример: 7000")
             return
         await finish_with_bank(update.message, context, int(text))
 
