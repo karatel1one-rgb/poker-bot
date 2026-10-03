@@ -9,12 +9,16 @@ from telegram import (
     ReplyKeyboardMarkup,
     Update,
 )
+from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -33,6 +37,7 @@ TOKEN = os.getenv("BOT_TOKEN", "8871794819:AAH8GyB7Z7VJrlVo77ciCZKJTONvNjSdOg0")
 PLAYERS_FILE = "players.json"
 GAME_FILE = "game.json"
 HISTORY_FILE = "history.json"
+OPERATORS_FILE = "operators.json"
 
 BLIND_LEVELS = [
     (5, 10),
@@ -59,6 +64,7 @@ REPLY_KEYBOARD = ReplyKeyboardMarkup(
         ["/game", "/leaderboard"],
     ],
     resize_keyboard=True,
+    selective=True,
 )
 
 
@@ -126,9 +132,82 @@ def save_history(history):
 players = load_players()
 
 
+def load_operators():
+    return load_json(OPERATORS_FILE, {})
+
+
+def save_operators(data):
+    save_json(OPERATORS_FILE, data)
+
+
+def get_operator(chat_id):
+    entry = load_operators().get(str(chat_id))
+    if isinstance(entry, dict):
+        return entry
+    if entry:
+        return {"user_id": int(entry), "name": "", "username": ""}
+    return None
+
+
+def set_operator(chat, user):
+    data = load_operators()
+    data[str(chat.id)] = {
+        "user_id": user.id,
+        "name": user.full_name,
+        "username": user.username or "",
+    }
+    save_operators(data)
+
+
+def is_operator(chat_id, user_id):
+    operator = get_operator(chat_id)
+    return bool(operator) and int(operator["user_id"]) == int(user_id)
+
+
+def is_start_command(update: Update):
+    message = update.effective_message
+    if not message or not message.text:
+        return False
+    command = message.text.split()[0].split("@")[0].lower()
+    return command == "/start"
+
+
+async def access_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or not chat or user.is_bot:
+        return
+    if is_start_command(update):
+        return
+    if is_operator(chat.id, user.id):
+        return
+
+    if update.callback_query:
+        await update.callback_query.answer(
+            "Бот работает только у того, кто нажал /start.",
+            show_alert=True,
+        )
+
+    raise ApplicationHandlerStop
+
+
 # ============================================================
 # 🧮 ХЕЛПЕРЫ
 # ============================================================
+
+async def safe_edit(query, text, reply_markup=None):
+    try:
+        await query.edit_message_text(text=text, reply_markup=reply_markup)
+    except BadRequest as error:
+        message = str(error).lower()
+        if "not modified" in message:
+            return
+        if "message to edit not found" in message or "there is no text" in message:
+            if query.message:
+                await query.message.reply_text(text, reply_markup=reply_markup)
+            return
+        raise
+
 
 def money_text(value):
     return f"{int(value):,} грн".replace(",", " ")
@@ -460,10 +539,16 @@ async def raise_blinds_job(context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+    set_operator(chat, user)
+
     await update.message.reply_text(
-        "♠️ Добро пожаловать в Poker Bot!\n\n"
-        "Напиши /help, чтобы увидеть список команд.\n"
+        f"♠️ {user.mention_html()}, бот включён только для тебя.\n\n"
+        "Клавиатура и команды работают лишь у того, кто нажал /start.\n"
         "Новая игра: /newgame",
+        parse_mode=ParseMode.HTML,
+        do_quote=True,
         reply_markup=REPLY_KEYBOARD,
     )
 
@@ -471,6 +556,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "♠️ КОМАНДЫ POKER BOT\n\n"
+        "/start — включить бота только для себя\n"
         "/leaderboard — текущий рейтинг\n"
         "/players — список игроков\n"
         "/stats Bars — статистика игрока\n"
@@ -770,7 +856,7 @@ async def start_tournament(query, context, game):
     schedule_blind_jobs(context.job_queue, game)
     small, big = current_blinds(game)
 
-    await query.edit_message_text(
+    await safe_edit(query,
         "🎮 ИГРА СТАРТОВАЛА\n\n"
         f"Игроки: {', '.join(game['selected'])}\n"
         f"Бай-ин: {money_text(game['buy_in'])}\n"
@@ -781,9 +867,15 @@ async def start_tournament(query, context, game):
         "Общий банк впишешь в конце — он делится 70% / 30%.",
         reply_markup=game_keyboard(game),
     )
+    operator = get_operator(query.message.chat_id)
+    mention = "Ведущий"
+    if operator:
+        mention = f'<a href="tg://user?id={operator["user_id"]}">{operator.get("name") or "Ведущий"}</a>'
+
     await context.bot.send_message(
         chat_id=query.message.chat_id,
-        text="Кнопки стола активны. «⏱ Осталось времени» — проверка таймера.",
+        text=f"{mention}, кнопки стола только у тебя. «⏱ Осталось времени» — проверка таймера.",
+        parse_mode=ParseMode.HTML,
         reply_markup=REPLY_KEYBOARD,
     )
 
@@ -810,7 +902,7 @@ async def pause_timer(chat_id, context, message=None, query=None):
     markup = game_keyboard(game)
 
     if query:
-        await query.edit_message_text(text, reply_markup=markup)
+        await safe_edit(query,text, reply_markup=markup)
     else:
         await message.reply_text(text, reply_markup=markup)
 
@@ -840,7 +932,7 @@ async def resume_timer(chat_id, context, message=None, query=None):
     markup = game_keyboard(game)
 
     if query:
-        await query.edit_message_text(text, reply_markup=markup)
+        await safe_edit(query,text, reply_markup=markup)
     else:
         await message.reply_text(text, reply_markup=markup)
 
@@ -876,7 +968,7 @@ async def apply_rebuy(name, message=None, query=None):
     markup = game_keyboard(game)
 
     if query:
-        await query.edit_message_text(text, reply_markup=markup)
+        await safe_edit(query,text, reply_markup=markup)
     else:
         await message.reply_text(text, reply_markup=markup)
 
@@ -933,13 +1025,13 @@ async def apply_out(name, context, message=None, query=None):
         )
 
         if query:
-            await query.edit_message_text(text, reply_markup=game_keyboard(game))
+            await safe_edit(query,text, reply_markup=game_keyboard(game))
         else:
             await message.reply_text(text, reply_markup=game_keyboard(game))
         return
 
     if query:
-        await query.edit_message_text(text, reply_markup=game_keyboard(game))
+        await safe_edit(query,text, reply_markup=game_keyboard(game))
     else:
         await message.reply_text(text, reply_markup=game_keyboard(game))
 
@@ -1032,13 +1124,14 @@ async def finish_with_bank(source, context, prize_pool):
 
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data or ""
+    if data != "t:time":
+        await query.answer()
     game = load_game()
 
     if data.startswith("sel:"):
         if not game or game.get("status") != "setup":
-            await query.edit_message_text("Сначала начни /newgame")
+            await safe_edit(query,"Сначала начни /newgame")
             return
         name = data.split(":", 1)[1]
         selected = game.get("selected", [])
@@ -1048,7 +1141,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             selected.append(name)
         game["selected"] = selected
         save_game(game)
-        await query.edit_message_text(
+        await safe_edit(query,
             "♠️ НОВАЯ ИГРА\nОтметь, кто играет:",
             reply_markup=setup_keyboard(game),
         )
@@ -1057,12 +1150,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "setup:cancel":
         cancel_blind_jobs(context.job_queue)
         clear_game()
-        await query.edit_message_text("❌ Создание игры отменено.")
+        await safe_edit(query,"❌ Создание игры отменено.")
         return
 
     if data == "setup:next":
         if not game or game.get("status") != "setup":
-            await query.edit_message_text("Сначала начни /newgame")
+            await safe_edit(query,"Сначала начни /newgame")
             return
         if len(game.get("selected", [])) < 2:
             await query.answer("Нужно минимум 2 игрока.", show_alert=True)
@@ -1070,7 +1163,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         game["status"] = "waiting_buyin"
         game["awaiting"] = "buyin"
         save_game(game)
-        await query.edit_message_text(
+        await safe_edit(query,
             "💵 Впиши стартовый бай-ин одного игрока (грн).\n"
             "Пример: 500\n\n"
             f"Игроки: {', '.join(game['selected'])}"
@@ -1079,7 +1172,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("int:"):
         if not game or game.get("status") != "waiting_interval":
-            await query.edit_message_text("Сначала выбери бай-ин.")
+            await safe_edit(query,"Сначала выбери бай-ин.")
             return
         game["interval_min"] = int(data.split(":", 1)[1])
         save_game(game)
@@ -1087,25 +1180,29 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not game:
-        await query.edit_message_text("Активной игры нет.")
+        if data == "t:time":
+            await query.answer("Сейчас нет активного таймера.", show_alert=True)
+        await safe_edit(query, "Активной игры нет.")
         return
 
     if data == "t:time":
-        await query.edit_message_text(
-            time_text(game),
+        remaining = time_text(game)
+        await query.answer(remaining[:180], show_alert=True)
+        await safe_edit(query,
+            remaining,
             reply_markup=game_keyboard(game),
         )
         return
 
     if data == "t:blinds":
-        await query.edit_message_text(
+        await safe_edit(query,
             blinds_text(game),
             reply_markup=game_keyboard(game),
         )
         return
 
     if data == "t:panel":
-        await query.edit_message_text(
+        await safe_edit(query,
             game_panel_text(game),
             reply_markup=game_keyboard(game),
         )
@@ -1120,14 +1217,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "t:rebuy":
-        await query.edit_message_text(
+        await safe_edit(query,
             "🔁 Кому ребай?",
             reply_markup=player_action_keyboard(game, "rebuy"),
         )
         return
 
     if data == "t:out":
-        await query.edit_message_text(
+        await safe_edit(query,
             "🚪 Кто выбыл?",
             reply_markup=player_action_keyboard(game, "out"),
         )
@@ -1160,7 +1257,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         suggested = suggested_prize_pool(game)
         rebuy_text, _ = rebuy_summary(game)
         start_bank = int(game["buy_in"]) * len(game["selected"])
-        await query.edit_message_text(
+        await safe_edit(query,
             "💰 Впиши общий банк турнира (грн).\n\n"
             f"Стартовый банк: {money_text(start_bank)}\n"
             f"Ребаи:\n{rebuy_text}\n"
@@ -1173,7 +1270,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "t:use_calc":
         class Source:
             async def reply_text(self, text, **kwargs):
-                await query.edit_message_text(text)
+                await safe_edit(query,text)
 
         await finish_with_bank(Source(), context, suggested_prize_pool(game))
         return
@@ -1246,6 +1343,13 @@ async def on_startup(app: Application):
         schedule_blind_jobs(app.job_queue, game)
 
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    error = context.error
+    if isinstance(error, BadRequest) and "not modified" in str(error).lower():
+        return
+    print(f"⚠️ Ошибка бота: {error}")
+
+
 def main():
     if not TOKEN or TOKEN == "ВСТАВЬ_СЮДА_ТОКЕН_БОТА":
         print("❌ ОШИБКА: не указан TOKEN бота.")
@@ -1266,6 +1370,7 @@ def main():
     if app.job_queue is None:
         print("⚠️ JobQueue недоступен. Установи: pip install \"python-telegram-bot[job-queue]\"")
 
+    app.add_handler(TypeHandler(Update, access_guard), group=-1)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("players", players_command))
@@ -1286,9 +1391,10 @@ def main():
     app.add_handler(CommandHandler("out", out_command))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
+    app.add_error_handler(on_error)
 
     print("♠️ Poker Bot запущен!")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
