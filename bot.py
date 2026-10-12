@@ -68,6 +68,8 @@ BTN_PAUSE = "⏸ Пауза"
 BTN_FINISH = "🏁 Закончить игру"
 BTN_GAME = "♠️ Игра"
 BTN_BOARD = "🏆 Рейтинг"
+BTN_ADD = "➕ Игрок"
+BTN_EDIT = "✏️ Очки"
 
 REPLY_KEYBOARD = ReplyKeyboardMarkup(
     [
@@ -75,6 +77,7 @@ REPLY_KEYBOARD = ReplyKeyboardMarkup(
         [BTN_REBUY, BTN_OUT],
         [BTN_PAUSE, BTN_FINISH],
         [BTN_GAME, BTN_BOARD],
+        [BTN_ADD, BTN_EDIT],
     ],
     resize_keyboard=True,
 )
@@ -936,7 +939,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cancelgame — отменить игру без статистики\n"
         "/addplayer Name — добавить игрока\n"
         "/removeplayer Name — убрать игрока без статистики\n\n"
-        "Кнопки снизу: время, блайнды, ребай, выбытие, пауза и финиш.\n"
+        "Кнопки снизу: время, блайнды, ребай, выбытие, пауза, финиш, «➕ Игрок» и «✏️ Очки».\n"
+        "«✏️ Очки» записывает очки и призовые в файл рейтинга. Победы и игры не меняет.\n"
         "Имя игрока можно писать в любом регистре.\n\n"
         "🔧 АДМИНИСТРАТОР:\n"
         "/edit Bars 85 12500 7 12\n\n"
@@ -1130,22 +1134,20 @@ async def blinds_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await reply_pm(update, context, blinds_text(game), reply_markup=game_keyboard(game))
 
 
-async def add_player_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await reply_pm(update, context, "Используй:\n/addplayer Name")
-        return
-
-    name = context.args[0].strip()
+async def register_new_player(update: Update, context: ContextTypes.DEFAULT_TYPE, name):
+    name = (name or "").strip()
     if not valid_player_name(name):
         await reply_pm(
             update,
             context,
-            "❌ Имя: одно слово, до 20 символов, без пробелов и знаков : / \\ @",
+            "❌ Имя: одно слово, до 20 символов, без пробелов и знаков : / \\ @\n"
+            "Напиши имя ещё раз или «отмена».",
         )
-        return
-    if resolve_player(name):
-        await reply_pm(update, context, f"❌ Игрок {resolve_player(name)} уже есть.")
-        return
+        return False
+    existing = resolve_player(name)
+    if existing:
+        await reply_pm(update, context, f"❌ Игрок {existing} уже есть в рейтинге.")
+        return False
 
     players[name] = default_player()
     save_players(players)
@@ -1156,7 +1158,148 @@ async def add_player_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         extra = "\nВ текущий турнир он не попадёт, только в следующий."
     else:
         extra = ""
-    await reply_pm(update, context, f"✅ {name} добавлен.{extra}")
+    await reply_pm(
+        update,
+        context,
+        f"✅ {name} добавлен в рейтинг.{extra}",
+        reply_markup=REPLY_KEYBOARD,
+    )
+    return True
+
+
+def clear_draft(context):
+    context.user_data.pop("awaiting_player", None)
+    context.user_data.pop("edit_name", None)
+    context.user_data.pop("edit_step", None)
+    context.user_data.pop("edit_points", None)
+
+
+def money_input_blocked():
+    game = load_game()
+    return bool(game and game.get("awaiting") in ("buyin", "bank"))
+
+
+def stats_keyboard():
+    buttons = []
+    row = []
+    for name in players:
+        row.append(InlineKeyboardButton(name, callback_data=f"edit:{name}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return InlineKeyboardMarkup(buttons)
+
+
+async def ask_new_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if money_input_blocked():
+        await reply_pm(
+            update,
+            context,
+            "Сейчас бот ждёт число: бай-ин или общий банк.\n"
+            "Впиши его, потом снова нажми «➕ Игрок».",
+        )
+        return
+    clear_draft(context)
+    context.user_data["awaiting_player"] = True
+    await reply_pm(
+        update,
+        context,
+        "Напиши имя нового игрока одним словом.\n"
+        "Пример: Roma\n\n"
+        "Он появится в рейтинге с нулями. Чтобы отменить, напиши «отмена».",
+        reply_markup=REPLY_KEYBOARD,
+    )
+
+
+async def ask_edit_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if money_input_blocked():
+        await reply_pm(
+            update,
+            context,
+            "Сейчас бот ждёт число: бай-ин или общий банк.\n"
+            "Впиши его, потом снова нажми «✏️ Очки».",
+        )
+        return
+    if not players:
+        await reply_pm(update, context, "В рейтинге пока нет игроков. Сначала нажми «➕ Игрок».")
+        return
+    clear_draft(context)
+    await reply_pm(
+        update,
+        context,
+        "Кого поправить?\n"
+        "Запишу новые очки и призовые в файл рейтинга. Победы и число игр останутся как есть.",
+        reply_markup=stats_keyboard(),
+    )
+
+
+async def apply_stat_edit(update: Update, context: ContextTypes.DEFAULT_TYPE, raw):
+    name = context.user_data.get("edit_name")
+    step = context.user_data.get("edit_step")
+    if not name or name not in players or step not in ("points", "money"):
+        clear_draft(context)
+        await reply_pm(update, context, "Правка сброшена. Нажми «✏️ Очки» ещё раз.", reply_markup=REPLY_KEYBOARD)
+        return
+
+    if raw.casefold() in ("отмена", "cancel"):
+        clear_draft(context)
+        await reply_pm(update, context, "Правка отменена. Файл не изменён.", reply_markup=REPLY_KEYBOARD)
+        return
+
+    if step == "points":
+        try:
+            points = int(raw)
+        except ValueError:
+            await reply_pm(update, context, "Нужно целое число очков. Пример: 85")
+            return
+        if points < 0:
+            await reply_pm(update, context, "Очки не могут быть отрицательными.")
+            return
+        context.user_data["edit_points"] = points
+        context.user_data["edit_step"] = "money"
+        await reply_pm(
+            update,
+            context,
+            f"Очки будут {points}.\n"
+            f"Теперь призовые в грн. Сейчас {money_text(players[name]['money'])}.\n"
+            "Пример: 12500 или 12 500",
+        )
+        return
+
+    amount = parse_money(raw)
+    if amount is None:
+        await reply_pm(update, context, "Нужно число грн. Пример: 12500")
+        return
+
+    points = context.user_data.get("edit_points")
+    if points is None:
+        clear_draft(context)
+        await reply_pm(update, context, "Правка сброшена. Нажми «✏️ Очки» ещё раз.", reply_markup=REPLY_KEYBOARD)
+        return
+    players[name]["points"] = int(points)
+    players[name]["money"] = amount
+    save_players(players)
+    clear_draft(context)
+    await reply_pm(
+        update,
+        context,
+        f"✅ {name} записан в рейтинг.\n\n"
+        f"⭐ Очки: {points}\n"
+        f"💰 Призовые: {money_text(amount)}\n"
+        f"🏆 Победы: {players[name]['wins']}\n"
+        f"🎮 Игр: {players[name]['games']}",
+        reply_markup=REPLY_KEYBOARD,
+    )
+
+
+async def add_player_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    clear_draft(context)
+    if not context.args:
+        await ask_new_player(update, context)
+        return
+    await register_new_player(update, context, context.args[0])
 
 
 async def remove_player_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1581,6 +1724,27 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data or ""
     game = load_game()
 
+    if data.startswith("edit:"):
+        name = data.split(":", 1)[1]
+        if name not in players:
+            await respond(update, context, "Этого игрока уже нет в списке.", query=query, alert=True)
+            return
+        row = players[name]
+        context.user_data["edit_name"] = name
+        context.user_data["edit_step"] = "points"
+        context.user_data.pop("edit_points", None)
+        context.user_data.pop("awaiting_player", None)
+        await respond(
+            update,
+            context,
+            f"⭐ {name}\n"
+            f"Сейчас {row['points']} очков и {money_text(row['money'])}.\n\n"
+            "Напиши новые очки числом.\n"
+            "Чтобы выйти без записи, напиши «отмена».",
+            query=query,
+        )
+        return
+
     if data.startswith("sel:"):
         if not game or game.get("status") != "setup":
             await respond(update, context, "Сначала начни /newgame", query=query)
@@ -1742,26 +1906,39 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     raw = message.text.strip()
     if raw == BTN_TIME:
+        clear_draft(context)
         await time_command(update, context)
         return
     if raw == BTN_BLINDS:
+        clear_draft(context)
         await blinds_command(update, context)
         return
     if raw in (BTN_GAME, "/game"):
+        clear_draft(context)
         await game_command(update, context)
         return
     if raw in (BTN_BOARD, "/leaderboard"):
+        clear_draft(context)
         await leaderboard(update, context)
         return
     if raw in (BTN_PAUSE, "▶️ Продолжить"):
+        clear_draft(context)
         await toggle_pause(update, context)
         return
     if raw == BTN_FINISH:
+        clear_draft(context)
         await request_finish(update, context)
+        return
+    if raw == BTN_ADD:
+        await ask_new_player(update, context)
+        return
+    if raw == BTN_EDIT:
+        await ask_edit_stats(update, context)
         return
 
     game = load_game()
     if raw == BTN_REBUY:
+        clear_draft(context)
         if not game or game.get("status") not in LIVE_TABLE:
             await reply_pm(update, context, "Ребай доступен только во время игры.")
             return
@@ -1773,6 +1950,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     if raw == BTN_OUT:
+        clear_draft(context)
         if not game or game.get("status") not in LIVE_TABLE:
             await reply_pm(update, context, "Отметить выбывание можно только во время игры.")
             return
@@ -1782,6 +1960,19 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🚪 Кто выбыл?",
             reply_markup=player_action_keyboard(game, "out"),
         )
+        return
+
+    if context.user_data.get("edit_step"):
+        await apply_stat_edit(update, context, raw)
+        return
+
+    if context.user_data.get("awaiting_player"):
+        if raw.casefold() in ("отмена", "cancel"):
+            context.user_data.pop("awaiting_player", None)
+            await reply_pm(update, context, "Добавление игрока отменено.", reply_markup=REPLY_KEYBOARD)
+            return
+        if await register_new_player(update, context, raw):
+            context.user_data.pop("awaiting_player", None)
         return
 
     if not game:
