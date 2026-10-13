@@ -1,39 +1,39 @@
 {
   "Kostya": {
-    "points": 31,
-    "money": 1492,
-    "wins": 2,
-    "games": 6
+    "points": 41,
+    "money": 2192,
+    "wins": 3,
+    "games": 7
   },
   "Bars": {
-    "points": 13,
+    "points": 16,
     "money": 476,
     "wins": 0,
-    "games": 8
+    "games": 9
   },
   "Vadya": {
     "points": 30,
     "money": 1483,
     "wins": 1,
-    "games": 5
+    "games": 6
   },
   "Chubasya": {
     "points": 6,
     "money": 0,
     "wins": 0,
-    "games": 5
+    "games": 6
   },
   "Yrk_ua": {
     "points": 0,
     "money": 0,
     "wins": 0,
-    "games": 3
+    "games": 4
   },
   "Riben": {
     "points": 13,
     "money": 706,
     "wins": 1,
-    "games": 4
+    "games": 5
   },
   "Truba": {
     "points": 3,
@@ -45,13 +45,13 @@
     "points": 0,
     "money": 0,
     "wins": 0,
-    "games": 1
+    "games": 2
   },
   "Vouchik": {
-    "points": 13,
-    "money": 490,
+    "points": 18,
+    "money": 790,
     "wins": 1,
-    "games": 4
+    "games": 5
   },
   "Tokar": {
     "points": 15,
@@ -63,12 +63,12 @@
     "points": 3,
     "money": 0,
     "wins": 0,
-    "games": 6
+    "games": 7
   },
   "Bodya": {
     "points": 20,
     "money": 1079,
     "wins": 2,
-    "games": 2
+    "games": 3
   }
 }
