@@ -1,39 +1,52 @@
+```json
 {
   "Kostya": {
     "points": 41,
     "money": 2192,
     "wins": 3,
-    "games": 7
-  },
-  "Bars": {
-    "points": 16,
-    "money": 476,
-    "wins": 0,
-    "games": 9
+    "games": 8
   },
   "Vadya": {
     "points": 30,
     "money": 1483,
     "wins": 1,
+    "games": 7
+  },
+  "Tokar": {
+    "points": 25,
+    "money": 1294,
+    "wins": 2,
+    "games": 5
+  },
+  "Vouchik": {
+    "points": 23,
+    "money": 1015,
+    "wins": 1,
     "games": 6
+  },
+  "Bodya": {
+    "points": 20,
+    "money": 1079,
+    "wins": 2,
+    "games": 4
+  },
+  "Riben": {
+    "points": 16,
+    "money": 706,
+    "wins": 1,
+    "games": 6
+  },
+  "Bars": {
+    "points": 16,
+    "money": 476,
+    "wins": 0,
+    "games": 10
   },
   "Chubasya": {
     "points": 6,
     "money": 0,
     "wins": 0,
-    "games": 6
-  },
-  "Yrk_ua": {
-    "points": 0,
-    "money": 0,
-    "wins": 0,
-    "games": 4
-  },
-  "Riben": {
-    "points": 13,
-    "money": 706,
-    "wins": 1,
-    "games": 5
+    "games": 7
   },
   "Truba": {
     "points": 3,
@@ -41,34 +54,23 @@
     "wins": 0,
     "games": 3
   },
-  "Vitya_Vouchik": {
-    "points": 0,
-    "money": 0,
-    "wins": 0,
-    "games": 2
-  },
-  "Vouchik": {
-    "points": 18,
-    "money": 790,
-    "wins": 1,
-    "games": 5
-  },
-  "Tokar": {
-    "points": 15,
-    "money": 769,
-    "wins": 1,
-    "games": 4
-  },
   "Danya": {
     "points": 3,
     "money": 0,
     "wins": 0,
     "games": 7
   },
-  "Bodya": {
-    "points": 20,
-    "money": 1079,
-    "wins": 2,
-    "games": 3
+  "Yrk_ua": {
+    "points": 0,
+    "money": 0,
+    "wins": 0,
+    "games": 5
+  },
+  "Vitya_Vouchik": {
+    "points": 0,
+    "money": 0,
+    "wins": 0,
+    "games": 2
   }
 }
+```
