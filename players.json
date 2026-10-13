@@ -44,4 +44,37 @@
   "Vitya_Vouchik": {
     "points": 0,
     "money": 0,
-    "wins":
+    "wins": 0,
+    "games": 1
+  },
+  "Vouchik": {
+    "points": 0,
+    "money": 0,
+    "wins": 0,
+    "games": 0
+  },
+  "Tokar": {
+    "points": 15,
+    "money": 769,
+    "wins": 1,
+    "games": 4
+  },
+  "Danya": {
+    "points": 3,
+    "money": 0,
+    "wins": 0,
+    "games": 6
+  },
+  "Bodya": {
+    "points": 20,
+    "money": 1079,
+    "wins": 2,
+    "games": 2
+  },
+  "Vova": {
+    "points": 13,
+    "money": 490,
+    "wins": 1,
+    "games": 4
+  }
+}
