@@ -2,10 +2,11 @@ import json
 import os
 import time
 import traceback
-import tempfile
 from datetime import datetime
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageOps
+
+from leaderboard import create_leaderboard_image
 
 from telegram import (
     InlineKeyboardButton,
@@ -76,6 +77,7 @@ BTN_GAME = "♠️ Игра"
 BTN_BOARD = "🏆 Рейтинг"
 BTN_ADD = "➕ Игрок"
 BTN_EDIT = "✏️ Очки"
+BTN_PHOTO = "📷 Добавить фото"
 
 REPLY_KEYBOARD = ReplyKeyboardMarkup(
     [
@@ -83,10 +85,28 @@ REPLY_KEYBOARD = ReplyKeyboardMarkup(
         [BTN_REBUY, BTN_OUT],
         [BTN_PAUSE, BTN_FINISH],
         [BTN_GAME, BTN_BOARD],
+        [BTN_PHOTO],
         [BTN_ADD, BTN_EDIT],
     ],
     resize_keyboard=True,
 )
+
+MENU_BUTTONS = {
+    BTN_TIME,
+    BTN_BLINDS,
+    BTN_REBUY,
+    BTN_OUT,
+    BTN_PAUSE,
+    BTN_FINISH,
+    BTN_GAME,
+    BTN_BOARD,
+    BTN_PHOTO,
+    BTN_ADD,
+    BTN_EDIT,
+    "▶️ Продолжить",
+    "/game",
+    "/leaderboard",
+}
 
 ACTIVE_GAME = ("running", "paused", "awaiting_bank")
 LIVE_TABLE = ("running", "paused")
@@ -929,7 +949,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "♠️ КОМАНДЫ POKER BOT\n\n"
         "/start — включить бота и обновить клавиатуру\n"
         "/leaderboard — визуальный рейтинг\n"
-        "/setphoto Kostya — загрузить фото игрока\n"
+        "«📷 Добавить фото» — выбрать игрока и прислать снимок\n"
+        "/setphoto Kostya — то же самое командой\n"
         "/removephoto Kostya — удалить фото\n"
         "/photos — список фото игроков\n"
         "/players — список игроков\n"
@@ -948,7 +969,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cancelgame — отменить игру без статистики\n"
         "/addplayer Name — добавить игрока\n"
         "/removeplayer Name — убрать игрока без статистики\n\n"
-        "Кнопки снизу: время, блайнды, ребай, выбытие, пауза, финиш, «➕ Игрок» и «✏️ Очки».\n"
+        "Кнопки снизу: время, блайнды, ребай, выбытие, пауза, финиш, рейтинг, «📷 Добавить фото», «➕ Игрок» и «✏️ Очки».\n"
+        "Новое фото заменяет предыдущее и сразу появляется в рейтинге.\n"
         "«✏️ Очки» записывает очки и призовые в файл рейтинга. Победы и игры не меняет.\n"
         "Имя игрока можно писать в любом регистре.\n\n"
         "🔧 АДМИНИСТРАТОР:\n"
@@ -965,43 +987,95 @@ async def players_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await reply_pm(update, context, text)
 
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    chat = update.effective_chat
-    if not user or not chat:
-        return
+def player_photo_path(name):
+    return os.path.join(PLAYER_PHOTOS_DIR, f"{name}.jpg")
 
+
+def photo_pick_keyboard():
+    buttons = []
+    row = []
+    for name, _data in sorted_players():
+        label = f"{name} 📷" if os.path.isfile(player_photo_path(name)) else name
+        row.append(InlineKeyboardButton(label, callback_data=f"ph:{name}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="phx")])
+    return InlineKeyboardMarkup(buttons)
+
+
+async def deliver_leaderboard(bot, user_id, caption="♠️ POKER LEAGUE — общий рейтинг"):
     os.makedirs(PLAYER_PHOTOS_DIR, exist_ok=True)
     image_path = None
     try:
         image_path = create_leaderboard_image(players, PLAYER_PHOTOS_DIR)
         with open(image_path, "rb") as image_file:
-            await context.bot.send_photo(
-                chat_id=user.id,
+            await bot.send_photo(
+                chat_id=int(user_id),
                 photo=image_file,
-                caption="♠️ POKER LEAGUE — общий рейтинг",
+                caption=clip_text(caption),
+                reply_markup=REPLY_KEYBOARD,
             )
-        await hide_group_ui(update)
+        return True
     except (Forbidden, BadRequest, OSError, ValueError) as error:
         print(f"⚠️ Не удалось отправить изображение рейтинга: {error}")
-        if chat.type != "private":
-            await reply_pm(
-                update,
-                context,
-                "Чтобы увидеть рейтинг, открой личку с ботом и нажми /start.",
-            )
-        else:
-            await reply_pm(
-                update,
-                context,
-                "Не удалось создать изображение рейтинга. Проверь, установлена ли Pillow: pip install Pillow",
-            )
+        return False
     finally:
         if image_path and os.path.exists(image_path):
             try:
                 os.remove(image_path)
             except OSError:
                 pass
+
+
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or not chat:
+        return
+
+    if await deliver_leaderboard(context.bot, user.id):
+        await hide_group_ui(update)
+        return
+
+    if chat.type != "private":
+        await reply_pm(
+            update,
+            context,
+            "Чтобы увидеть рейтинг, открой личку с ботом и нажми /start.",
+        )
+    else:
+        await reply_pm(
+            update,
+            context,
+            "Не удалось создать изображение рейтинга. Проверь, установлена ли Pillow: pip install Pillow",
+        )
+
+
+async def ask_player_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if money_input_blocked():
+        await reply_pm(
+            update,
+            context,
+            "Сейчас бот ждёт число: бай-ин или общий банк.\n"
+            "Впиши его, потом снова нажми «📷 Добавить фото».",
+        )
+        return
+    if not players:
+        await reply_pm(update, context, "В рейтинге пока нет игроков. Сначала нажми «➕ Игрок».")
+        return
+    clear_draft(context)
+    context.user_data.pop("awaiting_player_photo", None)
+    await reply_pm(
+        update,
+        context,
+        "📷 Кому добавить или сменить фото?\n"
+        "Выбери игрока, затем пришли изображение одним сообщением.\n"
+        "Значок 📷 значит, что фото уже есть — новое его заменит.",
+        reply_markup=photo_pick_keyboard(),
+    )
 
 
 async def setphoto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1032,7 +1106,7 @@ async def removephoto_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not name:
         await reply_pm(update, context, "❌ Игрок не найден.")
         return
-    path = os.path.join(PLAYER_PHOTOS_DIR, f"{name}.jpg")
+    path = player_photo_path(name)
     if os.path.exists(path):
         try:
             os.remove(path)
@@ -1048,12 +1122,12 @@ async def photos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.makedirs(PLAYER_PHOTOS_DIR, exist_ok=True)
     saved = []
     for name in players:
-        if os.path.isfile(os.path.join(PLAYER_PHOTOS_DIR, f"{name}.jpg")):
+        if os.path.isfile(player_photo_path(name)):
             saved.append(name)
     if saved:
         text = "📸 ФОТО ИГРОКОВ\n\n" + "\n".join(f"• {name}" for name in saved)
     else:
-        text = "📸 Сохранённых фото пока нет.\nИспользуй /setphoto Имя"
+        text = "📸 Сохранённых фото пока нет.\nНажми «📷 Добавить фото» и выбери игрока."
     await reply_pm(update, context, text)
 
 
@@ -1084,13 +1158,15 @@ async def receive_player_photo(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     os.makedirs(PLAYER_PHOTOS_DIR, exist_ok=True)
-    destination = os.path.join(PLAYER_PHOTOS_DIR, f"{name}.jpg")
+    destination = player_photo_path(name)
+    had_photo = os.path.isfile(destination)
     temporary = destination + ".tmp"
     try:
         await telegram_file.download_to_drive(custom_path=temporary)
-        from PIL import Image
         with Image.open(temporary) as img:
-            img.convert("RGB").save(destination, format="JPEG", quality=92, optimize=True)
+            ImageOps.exif_transpose(img).convert("RGB").save(
+                destination, format="JPEG", quality=92, optimize=True
+            )
     except Exception as error:
         try:
             if os.path.exists(temporary):
@@ -1107,7 +1183,12 @@ async def receive_player_photo(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
     context.user_data.pop("awaiting_player_photo", None)
-    await reply_pm(update, context, f"✅ Фото {name} сохранено. Оно появится в рейтинге.")
+    caption = f"✅ Фото {name} обновлено" if had_photo else f"✅ Фото {name} сохранено"
+    user = update.effective_user
+    if user and await deliver_leaderboard(context.bot, user.id, caption):
+        await hide_group_ui(update)
+        return
+    await reply_pm(update, context, f"{caption}. Открой «🏆 Рейтинг», чтобы увидеть его.")
 
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1860,6 +1941,32 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data or ""
     game = load_game()
 
+    if data == "phx":
+        context.user_data.pop("awaiting_player_photo", None)
+        await respond(update, context, "Загрузка фото отменена.", query=query)
+        return
+
+    if data.startswith("ph:"):
+        name = data.split(":", 1)[1]
+        if name not in players:
+            await respond(update, context, "Этого игрока уже нет в списке.", query=query, alert=True)
+            return
+        clear_draft(context)
+        context.user_data["awaiting_player_photo"] = name
+        if os.path.isfile(player_photo_path(name)):
+            hint = "Новый снимок заменит текущее фото в рейтинге."
+        else:
+            hint = "Снимок появится в рейтинге вместо инициалов."
+        await respond(
+            update,
+            context,
+            f"📸 {name}\n{hint}\n\n"
+            "Пришли фотографию одним сообщением.\n"
+            "Чтобы выйти, напиши «отмена».",
+            query=query,
+        )
+        return
+
     if data.startswith("edit:"):
         name = data.split(":", 1)[1]
         if name not in players:
@@ -2041,10 +2148,10 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     raw = message.text.strip()
-    if context.user_data.get("awaiting_player_photo"):
+    if context.user_data.get("awaiting_player_photo") and raw not in MENU_BUTTONS:
         if raw.casefold() in ("отмена", "cancel"):
             context.user_data.pop("awaiting_player_photo", None)
-            await reply_pm(update, context, "Загрузка фото отменена.")
+            await reply_pm(update, context, "Загрузка фото отменена.", reply_markup=REPLY_KEYBOARD)
         else:
             await reply_pm(
                 update, context,
@@ -2052,6 +2159,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Отправь фото отдельным сообщением или напиши «отмена».",
             )
         return
+    context.user_data.pop("awaiting_player_photo", None)
 
     if raw == BTN_TIME:
         clear_draft(context)
@@ -2082,6 +2190,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if raw == BTN_EDIT:
         await ask_edit_stats(update, context)
+        return
+    if raw == BTN_PHOTO:
+        await ask_player_photo(update, context)
         return
 
     game = load_game()
@@ -2192,157 +2303,6 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     traceback.print_exception(type(error), error, error.__traceback__)
 
 
-
-# ============================================================
-# 🎨 ГЕНЕРАЦИЯ КАРТИНКИ РЕЙТИНГА
-# ============================================================
-
-
-WIDTH = 1200
-BG = (12, 17, 29)
-PANEL = (22, 30, 47)
-TEXT = (242, 245, 250)
-MUTED = (153, 166, 187)
-GOLD = (246, 196, 75)
-SILVER = (190, 204, 220)
-BRONZE = (205, 137, 91)
-ACCENTS = [GOLD, SILVER, BRONZE]
-
-
-def _font(size, bold=False):
-    candidates = []
-    if os.name == "nt":
-        candidates += [
-            r"C:\Windows\Fonts\arialbd.ttf" if bold else r"C:\Windows\Fonts\arial.ttf",
-            r"C:\Windows\Fonts\segoeuib.ttf" if bold else r"C:\Windows\Fonts\segoeui.ttf",
-        ]
-    candidates += [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-    ]
-    for path in candidates:
-        try:
-            return ImageFont.truetype(path, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
-
-
-def _money(value):
-    try:
-        amount = int(value)
-    except (TypeError, ValueError):
-        amount = 0
-    return f"{amount:,}".replace(",", " ") + " грн"
-
-
-def _photo(photo_path, size):
-    if not os.path.isfile(photo_path):
-        return None
-    try:
-        with Image.open(photo_path) as source:
-            source = ImageOps.fit(source.convert("RGB"), (size, size), centering=(0.5, 0.35))
-            mask = Image.new("L", (size, size), 0)
-            ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
-            source.putalpha(mask)
-            return source
-    except (OSError, ValueError):
-        return None
-
-
-def create_leaderboard_image(players, photos_dir="player_photos"):
-    ranking = sorted(
-        players.items(),
-        key=lambda item: (
-            int(item[1].get("points", 0) or 0),
-            int(item[1].get("wins", 0) or 0),
-            int(item[1].get("money", 0) or 0),
-            item[0],
-        ),
-        reverse=True,
-    )
-    row_height = 100
-    podium_height = 310 if ranking else 160
-    height = 170 + podium_height + max(1, len(ranking) - 3) * row_height + 90
-    height = max(700, height)
-    image = Image.new("RGB", (WIDTH, height), BG)
-    draw = ImageDraw.Draw(image)
-
-    # Header
-    draw.rounded_rectangle((40, 35, WIDTH - 40, 135), radius=28, fill=PANEL, outline=(43, 57, 80), width=2)
-    draw.text((72, 52), "POKER LEAGUE", font=_font(25, True), fill=GOLD)
-    draw.text((72, 82), "ОБЩИЙ РЕЙТИНГ", font=_font(34, True), fill=TEXT)
-    draw.text((WIDTH - 75, 78), f"ИГРОКОВ: {len(ranking)}", font=_font(18, True), fill=MUTED, anchor="ra")
-
-    if not ranking:
-        draw.text((WIDTH // 2, 260), "Пока нет игроков", font=_font(30, True), fill=MUTED, anchor="mm")
-    else:
-        podium_top = 170
-        card_gap = 18
-        card_width = (WIDTH - 80 - 2 * card_gap) // 3
-        order = [1, 0, 2] if len(ranking) >= 3 else list(range(len(ranking)))
-        # With fewer than three players, keep the podium centered.
-        if len(ranking) < 3:
-            card_width = min(330, (WIDTH - 80 - 18 * (len(ranking) - 1)) // len(ranking))
-            total = card_width * len(ranking) + 18 * (len(ranking) - 1)
-            starts = [(WIDTH - total) // 2 + i * (card_width + 18) for i in range(len(ranking))]
-            placements = [(idx, starts[idx], podium_top + 8) for idx in range(len(ranking))]
-        else:
-            placements = [(idx, 40 + i * (card_width + card_gap), podium_top + (0 if idx == 0 else 22)) for i, idx in enumerate(order)]
-        for idx, x, y in placements:
-            name, data = ranking[idx]
-            accent = ACCENTS[idx] if idx < 3 else GOLD
-            card_h = 280 if idx == 0 else 258
-            draw.rounded_rectangle((x, y, x + card_width, y + card_h), radius=26, fill=PANEL, outline=accent, width=3)
-            medal = ["1 МЕСТО", "2 МЕСТО", "3 МЕСТО"][idx] if idx < 3 else f"{idx + 1} МЕСТО"
-            draw.text((x + card_width // 2, y + 25), medal, font=_font(19, True), fill=accent, anchor="mm")
-            photo_size = 94
-            photo = _photo(os.path.join(photos_dir, f"{name}.jpg"), photo_size)
-            px, py = x + (card_width - photo_size) // 2, y + 48
-            draw.ellipse((px - 4, py - 4, px + photo_size + 4, py + photo_size + 4), outline=accent, width=3)
-            if photo:
-                image.paste(photo, (px, py), photo)
-            else:
-                draw.ellipse((px, py, px + photo_size, py + photo_size), fill=(39, 51, 73))
-                initials = "".join(part[0] for part in name.replace("_", " ").split()[:2]).upper()[:2] or "?"
-                draw.text((px + photo_size // 2, py + photo_size // 2), initials, font=_font(30, True), fill=TEXT, anchor="mm")
-            name_font = _font(25 if len(name) < 13 else 20, True)
-            draw.text((x + card_width // 2, y + 158), name, font=name_font, fill=TEXT, anchor="mm")
-            draw.text((x + card_width // 2, y + 193), f"{int(data.get('points', 0) or 0)} очков", font=_font(22, True), fill=accent, anchor="mm")
-            draw.text((x + card_width // 2, y + 226), f"{int(data.get('wins', 0) or 0)} побед  •  {int(data.get('games', 0) or 0)} игр",
-                      font=_font(14, True), fill=MUTED, anchor="mm")
-            draw.text((x + card_width // 2, y + 250), _money(data.get("money", 0)), font=_font(16, True), fill=TEXT, anchor="mm")
-
-    # Compact list for the remaining players.
-    remaining = ranking[3:]
-    if remaining:
-        list_top = 510
-        draw.text((55, list_top), "ОСТАЛЬНЫЕ ИГРОКИ", font=_font(22, True), fill=MUTED)
-        y = list_top + 42
-        for idx, (name, data) in enumerate(remaining, 4):
-            draw.rounded_rectangle((40, y, WIDTH - 40, y + 82), radius=18, fill=PANEL)
-            draw.text((65, y + 41), f"{idx:02d}", font=_font(22, True), fill=MUTED, anchor="lm")
-            photo = _photo(os.path.join(photos_dir, f"{name}.jpg"), 56)
-            px, py = 120, y + 13
-            if photo:
-                image.paste(photo, (px, py), photo)
-            else:
-                draw.ellipse((px, py, px + 56, py + 56), fill=(39, 51, 73))
-                initials = "".join(part[0] for part in name.replace("_", " ").split()[:2]).upper()[:2] or "?"
-                draw.text((px + 28, py + 28), initials, font=_font(18, True), fill=TEXT, anchor="mm")
-            draw.text((195, y + 41), name, font=_font(22, True), fill=TEXT, anchor="lm")
-            draw.text((590, y + 41), f"{int(data.get('points', 0) or 0)} очков", font=_font(18, True), fill=GOLD, anchor="lm")
-            draw.text((800, y + 41), f"{int(data.get('wins', 0) or 0)} побед", font=_font(17), fill=MUTED, anchor="lm")
-            draw.text((WIDTH - 65, y + 41), _money(data.get("money", 0)), font=_font(18, True), fill=TEXT, anchor="rm")
-            y += row_height
-    draw.text((WIDTH // 2, height - 35), "Рейтинг обновляется из статистики игроков", font=_font(15), fill=(105, 119, 143), anchor="mm")
-
-    fd, path = tempfile.mkstemp(prefix="poker_leaderboard_", suffix=".png")
-    os.close(fd)
-    image.save(path, format="PNG", optimize=True)
-    return path
 
 def main():
     if not TOKEN:
