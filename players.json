@@ -1,4 +1,4 @@
-
+```json
 {
   "Kostya": {
     "points": 46,
@@ -50,32 +50,4 @@
   },
   "Truba": {
     "points": 8,
-    "money": 405,
-    "wins": 0,
-    "games": 7
-  },
-  "Danya": {
-    "points": 3,
-    "money": 0,
-    "wins": 0,
-    "games": 7
-  },
-  "Yrk_ua": {
-    "points": 10,
-    "money": 690,
-    "wins": 0,
-    "games": 12
-  },
-  "Vitya_Vouchik": {
-    "points": 0,
-    "money": 0,
-    "wins": 0,
-    "games": 2
-  },
-  "Dabya": {
-    "points": 0,
-    "money": 0,
-    "wins": 0,
-    "games": 1
-  }
-}
+    "money": 405
