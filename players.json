@@ -1,3 +1,4 @@
+
 {
   "Kostya": {
     "points": 46,
@@ -6,8 +7,8 @@
     "games": 17
   },
   "Vadya": {
-    "points": 75,
-    "money": 4198,
+    "points": 79,
+    "money": 4248,
     "wins": 4,
     "games": 19
   },
@@ -19,7 +20,7 @@
   },
   "Tokar": {
     "points": 48,
-    "money": 3250,
+    "money": 3254,
     "wins": 4,
     "games": 10
   },
@@ -42,10 +43,10 @@
     "games": 14
   },
   "Chubasya": {
-    "points": 35,
+    "points": 38,
     "money": 1590,
     "wins": 1,
-    "games": 17
+    "games": 18
   },
   "Truba": {
     "points": 18,
@@ -54,7 +55,7 @@
     "games": 10
   },
   "Danya": {
-    "points": 9,
+    "points": 6,
     "money": 0,
     "wins": 0,
     "games": 10
