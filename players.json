@@ -1,9 +1,9 @@
 {
   "Kostya": {
-    "points": 51,
-    "money": 2822,
+    "points": 46,
+    "money": 2432,
     "wins": 3,
-    "games": 20
+    "games": 19
   },
   "Vadya": {
     "points": 119,
@@ -18,32 +18,32 @@
     "games": 26
   },
   "Tokar": {
-    "points": 69,
+    "points": 66,
     "money": 4464,
     "wins": 5,
     "games": 18
   },
   "Vouchik": {
-    "points": 81,
-    "money": 5840,
-    "wins": 5,
+    "points": 91,
+    "money": 6750,
+    "wins": 6,
     "games": 26
   },
   "Bodya": {
     "points": 70,
     "money": 4109,
     "wins": 5,
-    "games": 18
+    "games": 19
   },
   "Riben": {
-    "points": 39,
-    "money": 2351,
-    "wins": 2,
+    "points": 29,
+    "money": 1441,
+    "wins": 1,
     "games": 21
   },
   "Chubasya": {
-    "points": 46,
-    "money": 2010,
+    "points": 51,
+    "money": 2400,
     "wins": 1,
     "games": 26
   },
@@ -51,13 +51,13 @@
     "points": 18,
     "money": 1315,
     "wins": 1,
-    "games": 10
+    "games": 11
   },
   "Danya": {
     "points": 6,
     "money": 0,
     "wins": 0,
-    "games": 12
+    "games": 11
   },
   "Yrk": {
     "points": 16,
