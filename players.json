@@ -6,16 +6,16 @@
     "games": 24
   },
   "Vadya": {
-    "points": 124,
-    "money": 7878,
-    "wins": 7,
-    "games": 33
+    "points": 134,
+    "money": 8543,
+    "wins": 8,
+    "games": 34
   },
   "Bars": {
-    "points": 75,
-    "money": 4585,
+    "points": 80,
+    "money": 4870,
     "wins": 4,
-    "games": 33
+    "games": 34
   },
   "Tokar": {
     "points": 69,
@@ -27,7 +27,7 @@
     "points": 124,
     "money": 9550,
     "wins": 9,
-    "games": 33
+    "games": 34
   },
   "Bodya": {
     "points": 75,
@@ -39,13 +39,13 @@
     "points": 44,
     "money": 2741,
     "wins": 2,
-    "games": 27
+    "games": 28
   },
   "Chubasya": {
-    "points": 51,
+    "points": 54,
     "money": 2400,
     "wins": 1,
-    "games": 32
+    "games": 33
   },
   "Truba": {
     "points": 21,
@@ -57,7 +57,7 @@
     "points": 6,
     "money": 0,
     "wins": 0,
-    "games": 12
+    "games": 13
   },
   "Yrk": {
     "points": 34,
@@ -69,6 +69,6 @@
     "points": 3,
     "money": 0,
     "wins": 0,
-    "games": 3
+    "games": 4
   }
 }
