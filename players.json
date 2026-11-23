@@ -4,7 +4,7 @@
     "points": 67,
     "money": 3732,
     "wins": 4,
-    "games": 33
+    "games": 34
   },
   "Vadya": {
     "points": 184,
@@ -13,22 +13,22 @@
     "games": 43
   },
   "Bars": {
-    "points": 105,
-    "money": 7070,
-    "wins": 6,
-    "games": 44
+    "points": 115,
+    "money": 7840,
+    "wins": 7,
+    "games": 45
   },
   "Tokar": {
-    "points": 89,
+    "points": 92,
     "money": 6029,
     "wins": 6,
-    "games": 28
+    "games": 29
   },
   "Vouchik": {
-    "points": 166,
-    "money": 12210,
+    "points": 171,
+    "money": 12540,
     "wins": 12,
-    "games": 44
+    "games": 45
   },
   "Bodya": {
     "points": 84,
@@ -52,7 +52,7 @@
     "points": 21,
     "money": 1315,
     "wins": 1,
-    "games": 15
+    "games": 16
   },
   "Danya": {
     "points": 6,
@@ -64,7 +64,7 @@
     "points": 49,
     "money": 3040,
     "wins": 1,
-    "games": 39
+    "games": 40
   },
   "Vitya_Vouchik": {
     "points": 3,
