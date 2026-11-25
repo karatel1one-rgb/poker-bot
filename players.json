@@ -10,13 +10,13 @@
     "points": 187,
     "money": 12358,
     "wins": 11,
-    "games": 44
+    "games": 45
   },
   "Bars": {
     "points": 125,
     "money": 8680,
     "wins": 8,
-    "games": 47
+    "games": 48
   },
   "Tokar": {
     "points": 95,
@@ -25,28 +25,28 @@
     "games": 30
   },
   "Vouchik": {
-    "points": 186,
-    "money": 13530,
-    "wins": 13,
-    "games": 47
+    "points": 196,
+    "money": 14125,
+    "wins": 14,
+    "games": 48
   },
   "Bodya": {
-    "points": 84,
-    "money": 4499,
+    "points": 89,
+    "money": 4754,
     "wins": 5,
-    "games": 30
+    "games": 31
   },
   "Riben": {
-    "points": 48,
+    "points": 51,
     "money": 2741,
     "wins": 2,
-    "games": 35
+    "games": 36
   },
   "Chubasya": {
     "points": 70,
     "money": 3015,
     "wins": 1,
-    "games": 43
+    "games": 44
   },
   "Truba": {
     "points": 21,
@@ -64,7 +64,7 @@
     "points": 50,
     "money": 3040,
     "wins": 1,
-    "games": 42
+    "games": 43
   },
   "Vitya_Vouchik": {
     "points": 3,
